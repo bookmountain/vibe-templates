@@ -230,8 +230,9 @@ class Gallery(BaseHTTPRequestHandler):
         member_page = re.fullmatch(r'/api/account/templates/([a-z0-9-]+)', path)
         if member_page and member_page[1] in SLUGS:
             prompt = (CATALOG / member_page[1] / 'prompt.md').read_text()
-            payload = dict(signedIn=True, pro=True, admin=False, prompt=prompt,
-                           unlimited=False, downloadsLeft=0)
+            payload = dict(signedIn=True, prompt=prompt)
+            if FLAGS['membership']:
+                payload.update(pro=FLAGS['pro'], admin=False, unlimited=False, downloadsLeft=0)
             return self.send_body(200, 'application/json', json.dumps(payload).encode())
         if path.startswith(('/api/auth/', '/api/account/')):
             return self.send_error(403)

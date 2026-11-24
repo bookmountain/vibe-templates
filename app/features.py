@@ -5,12 +5,15 @@ from posixpath import normpath
 from urllib.parse import unquote
 
 FLAGS = {name: os.getenv(f'VIBE_ENABLE_{name.upper()}', 'false').lower() in ('true', '1')
-         for name in ('oauth', 'payments', 'pro')}
+         for name in ('oauth', 'membership', 'payments', 'pro')}
+if not FLAGS['membership']:
+    FLAGS.update(payments=False, pro=False)
 
 ROUTES = {
     'oauth': r'(?:login|signup|register|oauth|account|auth|api/(?:auth|oauth))(?:/|$)',
     'payments': r'(?:pricing|checkout|billing|payment|payments|subscribe|subscription|api/(?:billing|checkout|payments?|stripe|subscriptions?))(?:/|$)',
-    'pro': r'(?:pro|upgrade|membership|api/(?:pro|upgrade|membership))(?:/|$)',
+    'membership': r'(?:memberships?|subscriptions?|account/(?:membership|subscription)|api/(?:account/)?(?:memberships?|subscriptions?))(?:/|$)',
+    'pro': r'(?:pro|upgrade|api/(?:pro|upgrade))(?:/|$)',
 }
 
 

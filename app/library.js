@@ -16,7 +16,7 @@
 
   function isSource(element) {
     return element && !element.hasAttribute(marker) &&
-      (sourceLabel.test(element.textContent.trim()) || sourceLabel.test(element.getAttribute('aria-label') || ''));
+      (sourceLabel.test((element.innerText || element.textContent).trim()) || sourceLabel.test(element.getAttribute('aria-label') || ''));
   }
 
   function update() {
