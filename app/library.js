@@ -55,11 +55,21 @@ if (location.hostname === 'vibe-template.bookmountain.work') {
     const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) rename(walker.currentNode);
   }
-  scan(document.documentElement);
+  let hydrated = false;
+  function start() {
+    // The account link is rendered by the client after the session lookup.
+    if (!hydrated && document.querySelector('header a[href$="/account"]')) {
+      hydrated = true;
+      scan(document.documentElement);
+    }
+    return hydrated;
+  }
   new MutationObserver(records => {
+    if (!start()) return;
     for (const change of records) {
       if (change.type === 'characterData') rename(change.target);
       else for (const added of change.addedNodes) scan(added);
     }
   }).observe(document.documentElement, {subtree:true, childList:true, characterData:true});
+  start();
 })();
