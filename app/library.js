@@ -1,28 +1,92 @@
-// Keep the template's own UI. Resolve its source button against the local archives.
+// Render the source action from the local inventory, including when the preview case changes.
 (() => {
-  let inventory;
-  document.addEventListener('click', async event => {
-    const button = event.target.closest('button');
-    if (!button || !/^Source code\b/i.test(button.innerText.trim())) return;
-    const slug = location.pathname.match(/^\/(?:zh\/)?templates\/([a-z0-9-]+)\/?$/)?.[1];
+  const controls = 'button, a';
+  const sourceLabel = /^(?:(?:download|get)\s+)?(?:source code|source zip|build kit)\b|^(?:下载|下載)?(?:源码|源代码|源碼|原始碼)/i;
+  const marker = 'data-local-source';
+  let records = {};
+  let refresh;
+  let inventoryError = false;
+  let activeButton;
+  let replacement;
+  let pending = false;
+
+  function currentSlug() {
+    return location.pathname.match(/^\/(?:zh\/)?templates\/([a-z0-9-]+)\/?$/)?.[1];
+  }
+
+  function isSource(element) {
+    return element && !element.hasAttribute(marker) &&
+      (sourceLabel.test(element.textContent.trim()) || sourceLabel.test(element.getAttribute('aria-label') || ''));
+  }
+
+  function update() {
+    pending = false;
+    const slug = currentSlug();
     if (!slug) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    inventory ??= fetch('/local-library.json').then(r => r.json());
-    const variants = (await inventory)[slug];
-    if (!variants?.length) return;
-    const link = document.querySelector('a[target="_blank"][href*="/app/"], a[target="_blank"][href*="/builds/"], a[target="_blank"][href^="' + catalogProvider.demo + '/"]');
-    const id = link?.href.match(/\/([a-f0-9-]{36})\//)?.[1] || new URLSearchParams(location.search).get('case');
-    const variant = variants.find(v => v.id === id) || variants[0];
-    if (variant.origin) {
-      const a = document.createElement('a');
-      a.href = '/local/source/' + variant.id + '.zip';
-      a.download = slug + '-' + variant.id + '.zip';
-      a.click();
-    } else {
-      location.assign(catalogProvider.source + '/templates/' + slug + '?case=' + variant.id);
+    if (!activeButton?.isConnected) {
+      activeButton = [...document.querySelectorAll(controls)].find(isSource);
     }
-  }, true);
+    if (!activeButton) return;
+    const zh = location.pathname.startsWith('/zh/');
+    const selector = 'a[target="_blank"][href*="/app/"], a[target="_blank"][href*="/builds/"], a[target="_blank"][href^="' + catalogProvider.demo + '/"]';
+    const preview = document.querySelector(selector);
+    const previewId = preview?.href.match(/\/([a-f0-9-]{36})(?:\/|$)/)?.[1];
+    const id = previewId || new URLSearchParams(location.search).get('case');
+    const variants = records[slug] || [];
+    const selected = id ? variants.find(v => v.id === id) : variants[0];
+    const key = [slug, selected?.id, selected?.archiveAvailable, inventoryError, zh].join('/');
+    if (replacement?.isConnected && replacement.previousElementSibling === activeButton && replacement.dataset.key === key) return;
+    replacement?.remove();
+    const ready = selected?.archiveAvailable;
+    replacement = document.createElement(ready ? 'a' : 'button');
+    replacement.setAttribute(marker, '');
+    replacement.dataset.key = key;
+    replacement.className = activeButton.className;
+    replacement.style.whiteSpace = "normal";
+    replacement.style.textAlign = "center";
+    if (ready) {
+      replacement.href = '/local/source/' + selected.id + '.zip';
+      replacement.download = slug + '-' + selected.id + '.zip';
+      replacement.textContent = zh ? '下载源码' : 'Download source code';
+    } else {
+      replacement.type = 'button';
+      replacement.disabled = true;
+      replacement.textContent = inventoryError && !variants.length ? (zh ? '本地目录暂不可用' : 'Local inventory unavailable') : !variants.length ? (zh ? '正在检查本地源码…' : 'Checking local source…') :
+        (zh ? '源码等待下载' : 'Source queued for download');
+    }
+    activeButton.style.setProperty('display', 'none', 'important');
+    activeButton.after(replacement);
+  }
+
+  function schedule() {
+    if (!pending && currentSlug()) {
+      pending = true;
+      requestAnimationFrame(update);
+    }
+  }
+
+  // Capture clicks before the provider app can start a checkout or a remote download.
+  function intercept(event) {
+    const button = event.target.closest?.(controls);
+    if (currentSlug() && isSource(button)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      schedule();
+    }
+  }
+  window.addEventListener('click', intercept, true);
+  window.addEventListener('auxclick', intercept, true);
+  function load() {
+    if (refresh) return;
+    refresh = fetch('/local-library.json').then(r => {
+      if (!r.ok) throw new Error('Local inventory unavailable');
+      return r.json();
+    }).then(data => { records = data; inventoryError = false; }).catch(() => { inventoryError = true; }).finally(() => { refresh = null; schedule(); });
+  }
+  load();
+  window.addEventListener('focus', load);
+  setInterval(() => { if (!document.hidden && currentSlug()) load(); }, 60000);
+  new MutationObserver(schedule).observe(document.documentElement, {childList:true, subtree:true, attributes:true, attributeFilter:['href']});
 })();
 
 // The public-domain deployment opens installed builds on the private gallery's host.

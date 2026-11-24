@@ -16,6 +16,8 @@ from http.cookies import SimpleCookie, CookieError
 
 import requests
 
+from features import FLAGS, chrome_style, disabled_path
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA = Path(os.getenv('VIBE_DATA_DIR', Path.home()/'.local/share/vibe-templates/data'))
 CATALOG = DATA / 'catalog'
@@ -107,7 +109,7 @@ class Gallery(BaseHTTPRequestHandler):
     def sign_in_page(self, error=False):
         page = Path(__file__).with_name('signin.html').read_bytes()
         if error:
-            page = page.replace(b'<!--error-->', b'<p class="error" role="alert">Check your username and gallery password.</p>')
+            page = page.replace(b'<!--error-->', b'<p class="error" role="alert">Check your gallery password and try again.</p>')
         self.send_body(401 if error else 200, 'text/html; charset=utf-8', page)
 
     def signature(self, expiry):
@@ -155,6 +157,8 @@ class Gallery(BaseHTTPRequestHandler):
             return
         if not self.authorized():
             return
+        if disabled_path(urlsplit(self.path).path):
+            return self.send_body(404, "text/plain", b"Feature disabled")
         if urlsplit(self.path).path == "/api/v1/events":
             return self.send_body(204, "text/plain", b"")
         self.send_error(405)
@@ -174,14 +178,16 @@ class Gallery(BaseHTTPRequestHandler):
         path = parts.path
         if parts.netloc or not path.startswith('/') or path.startswith('//'):
             return self.send_error(400)
+        if disabled_path(path):
+            return self.send_body(404, 'text/plain', b'Feature disabled')
         if path == '/local-library.js':
-            config = {'source': ORIGIN, 'demo': DEMO_ORIGIN, 'label': urlsplit(ORIGIN).hostname.split('.')[0]}
+            config = {'features': FLAGS, 'source': ORIGIN, 'demo': DEMO_ORIGIN, 'label': urlsplit(ORIGIN).hostname.split('.')[0]}
             script = ('const catalogProvider = ' + json.dumps(config) + ';\n').encode()
             return self.send_body(200, 'text/javascript', script + Path(__file__).with_name('library.js').read_bytes())
         if path == '/local-library.json':
             data = {r['template']: [] for r in INVENTORY}
             for r in INVENTORY:
-                data[r['template']].append({'id': r['variant'], 'origin': ('/builds/' + r['variant'] if PUBLIC_HOST else DEMOS.get(r['variant'])) if r['variant'] in DEMOS else None})
+                data[r['template']].append({'id': r['variant'], 'archiveAvailable': r['variant'] in ARCHIVES, 'origin': ('/builds/' + r['variant'] if PUBLIC_HOST else DEMOS.get(r['variant'])) if r['variant'] in DEMOS else None})
             return self.send_body(200, 'application/json', json.dumps(data).encode())
         match = re.fullmatch(r'/local/(prompt|design)/([a-z0-9-]+)', path)
         if match and match[2] in SLUGS:
@@ -211,7 +217,7 @@ class Gallery(BaseHTTPRequestHandler):
             return self.send_body(302, 'text/plain', b'', DEMOS[key] + suffix)
         if path.startswith('/local/source/'):
             archive = ARCHIVES.get(path.rsplit('/', 1)[-1].removesuffix('.zip'))
-            if archive:
+            if archive and archive.is_file():
                 return self.send_body(200, 'application/zip', archive.read_bytes())
             return self.send_error(404)
         # Account actions stay on the vendor site. The local reader has no vendor token.
@@ -243,7 +249,7 @@ class Gallery(BaseHTTPRequestHandler):
         if any(t in typ for t in ('text/', 'javascript', 'json')):
             data = localize(data)
         if 'text/html' in typ and b'</head>' in data:
-            data = data.replace(b'</head>', b'<script defer src="/local-library.js"></script></head>', 1)
+            data = data.replace(b'</head>', chrome_style() + b'<script defer src="/local-library.js"></script></head>', 1)
         try:
             self.send_body(status, typ, data, location)
         except (BrokenPipeError, ConnectionResetError):
@@ -256,7 +262,7 @@ class Gallery(BaseHTTPRequestHandler):
 def load_builds():
     global INVENTORY, ARCHIVES
     rows = json.loads((CATALOG / 'source-inventory.json').read_text())
-    ARCHIVES = {r['variant']: DATA / r['archive'] for r in rows if r['archive']}
+    ARCHIVES = {r['variant']: DATA / r['archive'] for r in rows if r['archive'] and (DATA / r['archive']).is_file()}
     INVENTORY = rows
     for r in rows:
         key = r['variant']
