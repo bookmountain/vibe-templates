@@ -9,3 +9,5 @@ A personal gallery for browsing website templates. Search by keyword or filter b
 3. Choose **Download source code** to save that variant’s ZIP. **Source queued for download** means the archive has yet to arrive.
 
 The gallery works without a membership or payment plan. This repository contains the application code. Downloaded templates and their source archives stay in the private collection.
+
+The interface is built with React and TypeScript. Its Django API handles owner sessions, catalog search, variant details, saved documents, previews, and source downloads.

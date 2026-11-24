@@ -21,3 +21,6 @@ member-browser/
 /*-build-kits/
 /*-local/cache/
 *.zip
+
+.venv/
+/dist/
