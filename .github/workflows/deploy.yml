@@ -1,0 +1,29 @@
+name: Deploy private gallery
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: production-gallery
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Queue this revision on the gallery server
+        run: git push origin HEAD:refs/heads/deploy
+      - name: Verify the revision served through Cloudflare
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          for attempt in $(seq 1 100); do
+            actual=$(curl -fsS --max-time 6 https://vibe-template.bookmountain.work/_deployment || true)
+            if [ "$actual" = "$EXPECTED_SHA" ]; then exit 0; fi
+            sleep 5
+          done
+          exit 1
