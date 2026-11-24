@@ -1,39 +1,37 @@
-"""Send newly verified kits and successful builds to the private gallery on vm100."""
+"""Pull collected ZIPs and builds from the gallery server when the laptop is online."""
 import json
 import os
 from pathlib import Path
 import subprocess
+from tempfile import NamedTemporaryFile
 
-ROOT = Path(os.getenv('VIBE_DATA_DIR', Path.home()/'.local/share/vibe-templates/data'))
-HOST = 'book@192.168.4.106'
-DEST = HOST + ':vibe-templates/data/'
-MANIFEST = ROOT/'catalog/source-inventory.json'
-STATE = Path.home()/'.local/share/vibe-templates/sent.json'
-
-
-def copy(*args):
-    subprocess.run(['rsync','-a','--relative','--exclude=node_modules','--exclude=__pycache__',*args,DEST],cwd=ROOT,check=True)
+DATA = Path(os.getenv('VIBE_DATA_DIR', Path.home() / '.local/share/vibe-templates/data'))
+MANIFEST = DATA / 'catalog/source-inventory.json'
 
 
 def main():
-    rows = json.loads(MANIFEST.read_text())
-    known = json.loads(STATE.read_text()) if STATE.exists() else {}
-    items = []
-    for row in rows:
+    host = os.environ['VIBE_SYNC_HOST']
+    ssh = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8']
+    remote_dir = 'vibe-templates/data'
+    snapshot = subprocess.check_output([*ssh, host, 'cat', f'{remote_dir}/catalog/source-inventory.json'])
+    files = []
+    for row in json.loads(snapshot):
         if not row['archive']:
             continue
-        key = row['variant']
-        project = Path('used-car-dealership') if row['archive']=='used-car-dealership.zip' else Path('projects')/key
-        ready = any((ROOT/project).glob('*/dist/index.html')) or any((ROOT/project).glob('*/index.html')) and not any((ROOT/project).glob('*/package.json'))
-        if known.get(key) != ready:
-            items.extend((row['archive'],str(project)))
-            known[key] = ready
-    if items:
-        copy(*items)
-        copy(str(MANIFEST.relative_to(ROOT)))
-        STATE.with_suffix('.tmp').write_text(json.dumps(known))
-        STATE.with_suffix('.tmp').replace(STATE)
+        files.append(row['archive'])
+        if row['archive'] == 'used-car-dealership.zip':
+            files.append('used-car-dealership/')
+        else:
+            files.append(f"projects/{row['variant']}/")
+    subprocess.run([
+        'rsync', '-ar', '--delay-updates', '--exclude=node_modules', '--exclude=*.partial',
+        '--from0', '--files-from=-', '-e', ' '.join(ssh), f'{host}:{remote_dir}/', str(DATA),
+    ], input=b'\0'.join(name.encode() for name in files), check=True)
+    if MANIFEST.read_bytes() != snapshot:
+        with NamedTemporaryFile(dir=MANIFEST.parent, delete=False) as staged:
+            staged.write(snapshot)
+        Path(staged.name).replace(MANIFEST)
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     main()
