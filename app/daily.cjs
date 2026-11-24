@@ -25,12 +25,19 @@ async function run() {
     if (!available) return;
     const template = JSON.parse(fs.readFileSync(path.join(root,'catalog',rows[0].template,'template.json')));
     await browser.route(new URL(template.demo).origin + '/**', route => route.abort());
-    // Prioritize giving each template one local build before collecting additional variants.
-    const have = new Set(rows.filter(row => row.archive).map(row => row.template));
-    let remaining = available;
-    for (const row of rows.filter(row => !row.archive).sort((a,b) => Number(have.has(a.template)) - Number(have.has(b.template)))) {
-      if (!remaining) break;
-      if (have.has(row.template) && rows.some(r => !have.has(r.template))) continue;
+    // Explicit requests go first, followed by one case per template, then the other cases.
+    const requested = process.env.VIBE_PRIORITY_TEMPLATE;
+    const represented = new Set(rows.filter(row => row.archive).map(row => row.template));
+    const firstCases = [];
+    const otherCases = [];
+    const priority = [];
+    for (const row of rows.filter(row => !row.archive)) {
+      if (row.template === requested) priority.push(row);
+      else if (!represented.has(row.template)) firstCases.push(row);
+      else otherCases.push(row);
+      represented.add(row.template);
+    }
+    for (const row of [...priority, ...firstCases, ...otherCases].slice(0, available)) {
       await page.goto(row.page);
       const link = page.locator('a[target="_blank"]').filter({hasText: /Open in new tab/i});
       const target = await link.first().getAttribute('href');
@@ -48,8 +55,7 @@ async function run() {
         const result = spawnSync('python3',[path.join(__dirname,'install_kit.py'),row.variant,temp],{stdio:'inherit'});
         if (result.status !== 0) throw Error('Could not install ' + row.variant);
       } finally { fs.rmSync(temp,{force:true}); }
-      have.add(row.template);
-      remaining--;
+
     }
   } finally { await browser.close(); }
 }
