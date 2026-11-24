@@ -6,3 +6,18 @@ __pycache__/
 .env
 .env.*
 member-browser/
+
+# Private downloaded sources, catalog files, archives, and generated previews.
+/data/
+/catalog/
+/projects/
+/build-kits/
+/cache/
+/app/cache/
+/used-car-dealership/
+/awesome-vibe-coding-websites/
+/*-catalog/
+/*-projects/
+/*-build-kits/
+/*-local/cache/
+*.zip
