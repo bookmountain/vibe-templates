@@ -1,5 +1,6 @@
 """Install the GitHub Actions deploy ref on vm100; keep the licensed data private."""
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -57,8 +58,12 @@ def main():
             git('--work-tree',str(stage),'checkout','--force',sha,'--','.')
             subprocess.run(['python3','-m','py_compile',str(stage/'vibefather-local/serve.py')],check=True)
             for name in ('vibefather-catalog','vibefather-projects','vibefather-build-kits','used-car-dealership','used-car-dealership.zip','vibefather-local/cache'):
-                if not (stage/name).exists():
-                    (stage/name).symlink_to(DATA/name)
+                installed = stage/name
+                if installed.is_dir():
+                    shutil.rmtree(installed)
+                elif installed.exists():
+                    installed.unlink()
+                installed.symlink_to(DATA/name)
             (stage/'.deployed-revision').write_text(sha+'\n')
             stage.rename(release)
     previous = CURRENT.resolve()
