@@ -1,5 +1,4 @@
 """Install the GitHub Actions deploy ref on vm100; keep the licensed data private."""
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -13,7 +12,7 @@ DATA = BASE/'site'
 CURRENT = BASE/'current'
 RELEASES = BASE/'releases'
 SERVICE = ['systemctl','--user','restart','vibe-templates.service']
-ENV = {**os.environ, 'GIT_SSH_COMMAND':f'ssh -i {Path.home()}/.ssh/vibe-templates-readonly -o IdentitiesOnly=yes -o BatchMode=yes'}
+ENV = {**os.environ, 'GIT_SSH_COMMAND':f'ssh -i {Path.home()}/.ssh/vibe-templates-readonly -o UserKnownHostsFile={Path.home()}/.ssh/vibe-github-known-hosts -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o BatchMode=yes'}
 
 
 def git(*args, **options):
@@ -42,6 +41,9 @@ def healthy():
 
 
 def main():
+    remote = git('ls-remote','origin','refs/heads/deploy',capture_output=True,text=True).stdout.split()
+    if not remote or (CURRENT.resolve() == RELEASES/remote[0] and healthy()):
+        return
     git('fetch','--quiet','origin','refs/heads/deploy')
     sha = git('rev-parse','FETCH_HEAD',capture_output=True,text=True).stdout.strip()
     release = RELEASES/sha
