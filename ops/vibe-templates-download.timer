@@ -1,0 +1,10 @@
+[Unit]
+Description=Collect one queued template during the daily download window
+
+[Timer]
+OnCalendar=*-*-* 09..16:00/12:00 Australia/Adelaide
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

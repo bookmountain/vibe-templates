@@ -10,7 +10,18 @@ const state = process.env.VIBE_TEMPLATES_STATE || path.join(os.homedir(), '.loca
 const { chromium } = require(path.join(state, 'playwright-core'));
 const inventory = path.join(root, 'catalog/source-inventory.json');
 
+function withinDownloadWindow(now = new Date()) {
+  const hour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Australia/Adelaide', hour: '2-digit', hourCycle: 'h23',
+  }).format(now));
+  return hour >= 9 && hour < 17;
+}
+
 async function run() {
+  if (!withinDownloadWindow()) {
+    console.log('Outside the 09:00–17:00 Adelaide download window');
+    return;
+  }
   const rows = JSON.parse(fs.readFileSync(inventory));
   if (rows.every(row => row.archive)) return;
   const browser = await chromium.launchPersistentContext(path.join(state, 'member-browser'), {
@@ -37,26 +48,26 @@ async function run() {
       else otherCases.push(row);
       represented.add(row.template);
     }
-    for (const row of [...priority, ...firstCases, ...otherCases].slice(0, available)) {
-      await page.goto(row.page);
-      const link = page.locator('a[target="_blank"]').filter({hasText: /Open in new tab/i});
-      const target = await link.first().getAttribute('href');
-      if (!target?.includes('/' + row.variant + '/')) throw Error('Selected case differs from queue: ' + row.variant);
-      const btn = page.getByRole('button', {name:'Source code', exact:true});
-      await btn.waitFor({timeout:15000});
-      const [download] = await Promise.all([page.waitForEvent('download',{timeout:45000}), btn.click()]);
-      const url = new URL(download.url());
-      if (url.protocol !== 'https:') throw Error('Unexpected download protocol');
-      const temp = path.join(root,'build-kits',row.variant + '.partial');
-      try {
-        const response = await fetch(url);
-        if (!response.ok) throw Error('Source request returned ' + response.status);
-        await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(temp,{mode:0o600}));
-        const result = spawnSync('python3',[path.join(__dirname,'install_kit.py'),row.variant,temp],{stdio:'inherit'});
-        if (result.status !== 0) throw Error('Could not install ' + row.variant);
-      } finally { fs.rmSync(temp,{force:true}); }
-
-    }
+    const row = priority[0] || firstCases[0] || otherCases[0];
+    if (!row) return;
+    await page.goto(row.page);
+    const link = page.locator('a[target="_blank"]').filter({hasText: /Open in new tab/i});
+    const target = await link.first().getAttribute('href');
+    if (!target?.includes('/' + row.variant + '/')) throw Error('Selected case differs from queue: ' + row.variant);
+    const btn = page.getByRole('button', {name:'Source code', exact:true});
+    await btn.waitFor({timeout:15000});
+    if (!withinDownloadWindow()) return;
+    const [download] = await Promise.all([page.waitForEvent('download',{timeout:45000}), btn.click()]);
+    const url = new URL(download.url());
+    if (url.protocol !== 'https:') throw Error('Unexpected download protocol');
+    const temp = path.join(root,'build-kits',row.variant + '.partial');
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw Error('Source request returned ' + response.status);
+      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(temp,{mode:0o600}));
+      const result = spawnSync('python3',[path.join(__dirname,'install_kit.py'),row.variant,temp],{stdio:'inherit'});
+      if (result.status !== 0) throw Error('Could not install ' + row.variant);
+    } finally { fs.rmSync(temp,{force:true}); }
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error.name + ': ' + error.message.split('\n')[0]); process.exitCode=1; });
