@@ -1,4 +1,4 @@
-"""Run the private, local VibeFather catalog on http://127.0.0.1:4175/."""
+"""Run the private, local vibe-templates catalog on http://127.0.0.1:4175/."""
 import base64
 import hashlib
 import hmac
@@ -16,12 +16,16 @@ from urllib.parse import urlsplit
 import requests
 
 ROOT = Path(__file__).resolve().parent.parent
-CATALOG = ROOT / 'vibefather-catalog'
-CACHE = Path(__file__).resolve().parent / 'cache'
-ORIGIN = 'https://vibefather.ai'
-MEDIA = 'https://media.vibefather.ai'
+DATA = Path(os.getenv('VIBE_DATA_DIR', Path.home()/'.local/share/vibe-templates/data'))
+CATALOG = DATA / 'catalog'
+CACHE = DATA / 'cache'
 INVENTORY = json.loads((CATALOG / 'source-inventory.json').read_text())
-ARCHIVES = {r['variant']: ROOT / r['archive'] for r in INVENTORY if r['archive']}
+ARCHIVES = {r['variant']: DATA / r['archive'] for r in INVENTORY if r['archive']}
+first = INVENTORY[0]
+source = json.loads((CATALOG / first['template'] / 'template.json').read_text())
+ORIGIN = 'https://' + urlsplit(first['page']).netloc
+MEDIA = 'https://' + urlsplit(source['media']['webp']).netloc
+DEMO_ORIGIN = 'https://' + urlsplit(source['demo']).netloc
 DEMOS = {}
 SLUGS = {r['template'] for r in INVENTORY}
 LOCKS = [threading.Lock() for _ in range(128)]
@@ -61,7 +65,7 @@ def localize(body):
     media_alias = LOCAL + '/media'
     body = body.replace(MEDIA.encode(), media_alias.encode())
     for key, origin in DEMOS.copy().items():
-        remote = 'https://demo.vibefather.ai/' + key
+        remote = DEMO_ORIGIN + '/' + key
         alias = origin + '/app/' + key
         assert len(alias) == len(remote)
         body = body.replace((remote + '/').encode(), (alias + '/').encode())
@@ -131,7 +135,9 @@ class Gallery(BaseHTTPRequestHandler):
         if parts.netloc or not path.startswith('/') or path.startswith('//'):
             return self.send_error(400)
         if path == '/local-library.js':
-            return self.send_body(200, 'text/javascript', Path(__file__).with_name('library.js').read_bytes())
+            config = {'source': ORIGIN, 'demo': DEMO_ORIGIN, 'label': urlsplit(ORIGIN).hostname.split('.')[0]}
+            script = ('const catalogProvider = ' + json.dumps(config) + ';\n').encode()
+            return self.send_body(200, 'text/javascript', script + Path(__file__).with_name('library.js').read_bytes())
         if path == '/local-library.json':
             data = {r['template']: [] for r in INVENTORY}
             for r in INVENTORY:
@@ -210,16 +216,16 @@ class Gallery(BaseHTTPRequestHandler):
 def load_builds():
     global INVENTORY, ARCHIVES
     rows = json.loads((CATALOG / 'source-inventory.json').read_text())
-    ARCHIVES = {r['variant']: ROOT / r['archive'] for r in rows if r['archive']}
+    ARCHIVES = {r['variant']: DATA / r['archive'] for r in rows if r['archive']}
     INVENTORY = rows
     for r in rows:
         key = r['variant']
         if key in DEMOS or key not in ARCHIVES:
             continue
         if r['archive'] == 'used-car-dealership.zip':
-            folder = ROOT / 'used-car-dealership/used-car-dealership-website/dist'
+            folder = DATA / 'used-car-dealership/used-car-dealership-website/dist'
         else:
-            folder = ROOT / 'vibefather-projects' / key / r['template'] / 'dist'
+            folder = DATA / 'projects' / key / r['template'] / 'dist'
         if not (folder / 'index.html').is_file():
             static_root = folder.parent
             if (static_root/'package.json').is_file() or not (static_root/'index.html').is_file():

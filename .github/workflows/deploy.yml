@@ -1,4 +1,4 @@
-name: Deploy private gallery
+name: Deploy vibe-templates
 on:
   push:
     branches: [main]

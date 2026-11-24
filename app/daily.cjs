@@ -1,14 +1,14 @@
-// Resume the licensed source queue through the signed-in VibeFather browser.
+// Resume the licensed source queue through the signed-in provider session.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const root = path.resolve(__dirname, '..');
-const state = process.env.VIBEFATHER_STATE || path.join(os.homedir(), '.local/share/vibefather-local');
+const root = process.env.VIBE_DATA_DIR || path.join(os.homedir(), '.local/share/vibe-templates/data');
+const state = process.env.VIBE_TEMPLATES_STATE || path.join(os.homedir(), '.local/share/vibe-templates');
 const { chromium } = require(path.join(state, 'playwright-core'));
-const inventory = path.join(root, 'vibefather-catalog/source-inventory.json');
+const inventory = path.join(root, 'catalog/source-inventory.json');
 
 async function run() {
   const rows = JSON.parse(fs.readFileSync(inventory));
@@ -18,12 +18,13 @@ async function run() {
   });
   try {
     const page = await browser.newPage();
-    await page.goto('https://vibefather.ai/account');
+    await page.goto(new URL('/account', rows[0].page).href);
     const counter = page.getByText(/^\d+ left today$/);
     const available = parseInt(await counter.innerText({timeout: 15000}), 10);
     console.log(available + ' source downloads available');
     if (!available) return;
-    await browser.route('https://demo.vibefather.ai/**', route => route.abort());
+    const template = JSON.parse(fs.readFileSync(path.join(root,'catalog',rows[0].template,'template.json')));
+    await browser.route(new URL(template.demo).origin + '/**', route => route.abort());
     // Prioritize giving each template one local build before collecting additional variants.
     const have = new Set(rows.filter(row => row.archive).map(row => row.template));
     let remaining = available;
@@ -39,7 +40,7 @@ async function run() {
       const [download] = await Promise.all([page.waitForEvent('download',{timeout:45000}), btn.click()]);
       const url = new URL(download.url());
       if (url.protocol !== 'https:') throw Error('Unexpected download protocol');
-      const temp = path.join(root,'vibefather-build-kits',row.variant + '.partial');
+      const temp = path.join(root,'build-kits',row.variant + '.partial');
       try {
         const response = await fetch(url);
         if (!response.ok) throw Error('Source request returned ' + response.status);

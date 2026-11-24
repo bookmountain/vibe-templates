@@ -1,13 +1,14 @@
 """Send newly verified kits and successful builds to the private gallery on vm100."""
 import json
+import os
 from pathlib import Path
 import subprocess
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(os.getenv('VIBE_DATA_DIR', Path.home()/'.local/share/vibe-templates/data'))
 HOST = 'book@192.168.4.106'
-DEST = HOST + ':vibe-templates/site/'
-MANIFEST = ROOT/'vibefather-catalog/source-inventory.json'
-STATE = Path.home()/'.local/share/vibefather-local/sent.json'
+DEST = HOST + ':vibe-templates/data/'
+MANIFEST = ROOT/'catalog/source-inventory.json'
+STATE = Path.home()/'.local/share/vibe-templates/sent.json'
 
 
 def copy(*args):
@@ -22,7 +23,7 @@ def main():
         if not row['archive']:
             continue
         key = row['variant']
-        project = Path('used-car-dealership') if row['archive']=='used-car-dealership.zip' else Path('vibefather-projects')/key
+        project = Path('used-car-dealership') if row['archive']=='used-car-dealership.zip' else Path('projects')/key
         ready = any((ROOT/project).glob('*/dist/index.html')) or any((ROOT/project).glob('*/index.html')) and not any((ROOT/project).glob('*/package.json'))
         if known.get(key) != ready:
             items.extend((row['archive'],str(project)))
