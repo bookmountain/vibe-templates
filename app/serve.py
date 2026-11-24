@@ -11,7 +11,8 @@ from functools import partial
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
+from http.cookies import SimpleCookie, CookieError
 
 import requests
 
@@ -103,16 +104,55 @@ class Gallery(BaseHTTPRequestHandler):
         if self.command != 'HEAD':
             self.wfile.write(data)
 
+    def sign_in_page(self, error=False):
+        page = Path(__file__).with_name('signin.html').read_bytes()
+        if error:
+            page = page.replace(b'<!--error-->', b'<p class="error" role="alert">Check your username and gallery password.</p>')
+        self.send_body(401 if error else 200, 'text/html; charset=utf-8', page)
+
+    def signature(self, expiry):
+        return hmac.new(ACCESS.encode(), ('gallery-session:' + expiry).encode(), 'sha256').hexdigest()
+
     def authorized(self):
-        if not PUBLIC_HOST or hmac.compare_digest(self.headers.get('Authorization',''), ACCESS):
+        if not PUBLIC_HOST or hmac.compare_digest(self.headers.get('Authorization','').encode(), ACCESS.encode()):
             return True
-        self.send_response(401)
-        self.send_header('WWW-Authenticate', 'Basic realm="Private template library", charset="UTF-8"')
-        self.send_header('Cache-Control', 'private, no-store')
-        self.end_headers()
+        cookies = SimpleCookie()
+        try:
+            cookies.load(self.headers.get('Cookie',''))
+        except CookieError:
+            pass
+        entry = cookies.get('__Host-gallery')
+        if entry:
+            expiry, _, signature = entry.value.partition('.')
+            if re.fullmatch(r'[0-9]{10}', expiry) and int(expiry) > time.time() and hmac.compare_digest(self.signature(expiry).encode(), signature.encode()):
+                return True
+        if self.command == 'GET' and (self.path == '/' or 'text/html' in self.headers.get('Accept','')):
+            self.sign_in_page()
+        else:
+            self.send_body(401, 'text/plain', b'Sign in to vibe-templates.')
         return False
 
     def do_POST(self):
+        if PUBLIC_HOST and self.path == '/_signin':
+            if self.headers.get('Origin') != 'https://' + PUBLIC_HOST:
+                return self.send_error(403)
+            length = self.headers.get('Content-Length','')
+            if not re.fullmatch(r'[0-9]{1,4}', length) or int(length) > 4096:
+                return self.send_error(400)
+            fields = parse_qs(self.rfile.read(int(length)).decode('utf-8', 'replace'))
+            user = fields.get('username', [''])[0]
+            password = fields.get('password', [''])[0]
+            provided = b'Basic ' + base64.b64encode((user + ':' + password).encode())
+            if not hmac.compare_digest(provided, ACCESS.encode()):
+                return self.sign_in_page(error=True)
+            duration = 86400
+            expiry = str(int(time.time()) + duration)
+            self.send_response(303)
+            self.send_header('Set-Cookie', f'__Host-gallery={expiry}.{self.signature(expiry)}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age={duration}')
+            self.send_header('Cache-Control', 'private, no-store')
+            self.send_header('Location', '/')
+            self.end_headers()
+            return
         if not self.authorized():
             return
         if urlsplit(self.path).path == "/api/v1/events":
