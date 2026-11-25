@@ -1,36 +1,23 @@
 # vibe-templates
 
-A password-protected gallery for browsing website templates, trying live previews, and downloading source code. The React and TypeScript frontend renders the gallery. Its Django API reads the catalog and serves each variant’s available files.
+A personal gallery for browsing website templates. Search by keyword or filter by tag, then open a template to explore its design, read its build prompt, and try the live preview.
 
 ## Using the gallery
 
-1. Sign in with your gallery password. Search by keyword, combine tags, or select **Downloaded** to find templates with at least one saved source archive.
-2. Open a template and select a variant to preview it. The **Build prompt** and **Design guide** tabs hold the template’s reference documents.
-3. Choose **Download source code** to save the selected variant’s ZIP. **Source queued for download** means that particular variant’s archive has yet to arrive.
+1. Sign in with your gallery password.
+2. Open a template. If it has multiple variants, select the one you want to preview.
+3. Choose **Download source code** to save that variant’s ZIP. **Source queued for download** means the archive has yet to arrive.
 
-Membership and payment features are disabled by default. Template files and source archives stay in the private collection.
+The gallery works without a membership or payment plan. This repository contains the application code. Downloaded templates and their source archives stay in the private collection.
 
-## Project layout
+## Run the TypeScript version
 
-- [`frontend/src/`](frontend/src/) contains the React pages for sign-in, search, filtering, and template previews.
-- [`gallery/`](gallery/) contains the Django backend. Its [API routes](gallery/urls.py) cover sessions, catalog search, variant details, prompts, design guides, and ZIP downloads.
-- [`tests/`](tests/) exercises sign-in, catalog filtering, previews, and downloads using a temporary sample collection.
-
-## Run locally
-
-Use Python 3.12 and Node.js 22.12 or newer. From the repository root, install the dependencies and build the frontend.
+Use Node.js 22.18 or newer. Start the gallery from the repository root with an existing collection.
 
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-npm ci
-npm run build
+node app/serve.ts
 ```
 
-To browse an existing collection, set `VIBE_DATA_DIR` to the directory containing its `catalog/` folder. Set `VIBE_ACCESS_FILE` to a plain-text file containing your gallery password. Keep both outside the repository.
+Open [the local gallery](http://127.0.0.1:4175/). The default collection directory is `~/.local/share/vibe-templates/data`. Set `VIBE_DATA_DIR` to use another collection containing `catalog/source-inventory.json`. Set `VIBE_PORT` to change the listening port. Hosted mode uses `VIBE_PUBLIC_HOST` and a password file specified by `VIBE_ACCESS_FILE`.
 
-```sh
-.venv/bin/python app/serve.py
-```
-
-Open [the local gallery](http://127.0.0.1:4175/) and sign in. To run the API tests independently of your collection, use `.venv/bin/python -m unittest discover -s tests`.
+For development, run `npm ci`, `npm run typecheck`, and `npm test`. Node runs the TypeScript directly and the server strips the browser script’s types before serving it. The deployment entry point is `ops/deploy.ts`. Existing Python service commands forward to Node. Set `VIBE_NODE` to select its executable when necessary.
